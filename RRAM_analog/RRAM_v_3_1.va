@@ -1,0 +1,273 @@
+
+/*******************************************************************/
+
+
+
+`include "disciplines.vams" 
+`include "constants.vams"
+
+module RRAM_v_3_1(t,b) ;
+
+	// Electrical connections
+	electrical t, b ;
+	inout t, b ;
+	// t: top electrode ; b: bottom electrode  
+	// note: please pay attention to the polarity when biased for SET/RESET
+
+
+// parameter list: begin
+	parameter real f = 1e13 ;          // unit: HZ  vibration frequency of oxygen atom in Vo
+	parameter real Ea = 1.0 ;          // unit: ev  average active energy of Vo
+	parameter real Er = 1.0 ;          // unit: ev   recommbination barrier between O2- and Vo
+	parameter real Eo = 1.15 ;          // unit: ev   kinetic barrier of O2- hopping between IML and RS layer
+	parameter real a = 5e-10 ;         // unit: m  lattice distance
+	parameter real Z = 2 ;		//unit:viod  the charge numbers of O2-
+	parameter real e = 1 ;		//  the charge of electron    
+	parameter real alpha1 = 0.94 ;         // unit:   when it is SET voltage, field enhancement factor
+	parameter real alpha2 = 1.3;         // unit:    when it is RESET voltage, field enhancement factor
+	parameter real Lv = 5.5e-9 ;         // unit: m     Lv is defined as the length of metallic-like region with rich oxygen vacany
+	parameter real Liml = 60e-9 ;         // unit: m     Liml is defined as the length of intermediate modulation region
+	parameter real Ls = 2.5e-9 ;         // unit: m    Ls is defined as the length of resistance switching region
+	parameter real w0 = 2.5e-9 ;	   // unit: m     Conductance Filament width
+	parameter real Wiml = 30e-9 ;        // unit: m   fixed width of the intermediate modulation region 
+	parameter real pi = 3.1415926 ;    
+	parameter real Rth = 1.8e6 ;         // unit: K/W   effective thermal resistance
+	parameter real Kb = 8.61733e-5  ;   // unit: ev/K  Boltzmann constant
+	parameter real T0 = 300 ;          // unit: K   ambient temperature
+	parameter real Eac = -0.001 ;          // unit:  eV   the activation energy of conductance  
+	parameter real A = 1.5e-6 ;          // unit:  A/(V*V)   The coefficient associated with the relationship between conductance and the electric field
+	parameter real B = 1e9 ;          // unit: 1/(V*s)    The coefficient associated with the relationship between conductance and the electric field 
+	parameter real phi1 = 1.55;		//unit: V   Interfacial potential barrier between HfO2 and bottom electrode
+	parameter real phi2 = 1.25;		//unit: V   Interfacial potential barrier between IML and HfO2
+	parameter real Cv0 = 0.9 ;          // unit:   when it is SET voltage, initial oxygen vacancy(Vo) percentage denoting the number of Vo divided by the total number  of lattice oxygen 
+	parameter real Co0 = 0 ;          // unit:   when it is RESET voltage, inital oxygen ion(O2-) percentage denoting the number of O2- divided by the total number  of lattice oxygen 
+	parameter real sigma_v0 = 30000 ;          // unit: S/m   the conductivtiy of metallic-like conductance
+	parameter real sigma0_iml =1/(30.4e-5) ;          // unit:S/m   the conductivtiy of intermediate modulation layer
+	parameter real sigma_o = 1000 ;          // unit:S/m   the conductivtiy of Ta2O5
+
+	
+/////////////////////////////////////////////////////
+// parameter list: end
+
+
+/*******************************************************************
+*
+* control variables description: 
+* based on oxygen vacancy generation and oxygen ions absorption and release
+*
+*******************************************************************/	
+	real Temp=T0 ;  	
+	real B0;
+	real A0;
+	/*********************************************************
+	****** 1. conductivity and resistance of different regions
+	**********************************************************/  
+	real sigma_v=sigma_v0;
+	real sigma_iml=sigma0_iml;
+	real sigma_rs=sigma_o;
+	real sigma_hfo2;
+	real factor1_up,factor1_down,factor2_up,factor2_down;
+	real Rs;
+	real Rv;
+	real Riml;
+	
+	/********************************************************
+	****** 2. oxygen vacancy and oxygen ions evolution*******
+	*********************************************************/
+	real Co=Co0;  
+	real Ciml_o;         
+	real Cv=Cv0;
+	real dCv;
+	real dCo;
+
+	/*******************************************************
+	****** 3. intermediate electrical parameters************
+	********************************************************/
+	real Itb,Vtb;
+	real Vs;
+	real E;
+	real dt=1e-9;
+	
+	/******************************************************
+	****** DIES: dynamic integral equation solver**********
+	*******************************************************/
+	analog 
+	begin
+
+	@(timer(0.5e-9,1e-9,1e-12))begin
+	
+        /******************************************************
+	******electrical behavior transmission*****************
+	*******************************************************/	
+	Vtb=V(t,b);
+	Itb=I(t,b);
+	
+	Rv=Lv/(pi*w0*w0*sigma_v);
+	Riml=Liml/(pi*Wiml*Wiml*sigma_iml);
+	Rs=Ls/(pi*w0*w0*sigma_rs);
+	Itb=Vtb/(Riml+Rs+Rv);
+	Vs=Itb*Rs;
+
+//*************************************************************
+	if ( Vtb == 0 )
+	begin
+		Itb=0 ;
+	end
+	
+/*******************************************************************
+*
+* ******************         SET           *************************
+*
+*******************************************************************/	
+	else if ( Vtb > 0 )
+	begin
+	
+			
+//***metallic-like region 
+
+
+		sigma_v=sigma_v0*exp(-1*Eac/(Kb*Temp));
+
+
+//***IML region	
+		Ciml_o=Cv*Ls*pi*w0*w0/(Liml*Wiml*Wiml*pi);
+		factor1_up=2*(1-Ciml_o)*sigma_iml+(1+2*Ciml_o)*sigma_o;
+		factor1_down=(2+Ciml_o)*sigma_iml+(1-Ciml_o)*sigma_o;
+		if (factor1_down<1e-6)
+		begin 
+			sigma_iml=0;
+		end
+		else if (factor1_down>1e-6)
+		begin
+			sigma_iml=sigma0_iml*factor1_up/factor1_down;
+		end
+
+
+// ***resistance switching region 
+		
+		E=(Vs/Ls);
+		A0=A/phi1;
+		B0=B*pow(phi1,3/2);
+		sigma_hfo2=(2*A0*E+A0*B0)*exp(-1*B0/(E));
+		factor2_up=2*(1-Cv)*sigma_hfo2+(1+2*Cv)*sigma_v;
+		factor2_down=(2+Cv)*sigma_hfo2+(1-Cv)*sigma_v;
+		if (factor2_down<1e-6)
+		begin 
+			sigma_rs=0;
+		end
+		else if (factor2_down>1e-6)
+		begin
+			sigma_rs=sigma_hfo2*factor2_up/factor2_down;
+		end
+
+
+//*** Vo and O2- proportion
+
+		Rv=Lv/(pi*w0*w0*sigma_v);
+		Riml=Liml/(pi*Wiml*Wiml*sigma_iml);
+		Rs=Ls/(pi*w0*w0*sigma_rs);
+		Itb=Vtb/(Riml+Rs+Rv);
+		Vs=Itb*Rs;
+		Temp = T0 + abs(Itb * Vs * Rth) ;
+		E=(Vs/Ls);
+
+		dCv=dt*f*exp(-(Ea-E*alpha1*a*Z*e)/(Kb*Temp))*(1-Cv) ;	
+		Cv=Cv+dCv;
+		
+		
+		
+	end
+/*******************************************************************
+*
+* **********************       RESET      **************************
+*
+*******************************************************************/	
+	else if ( Vtb < 0 )
+	begin
+	
+	
+//***metallic-like region 	
+
+		sigma_v=sigma_v0*exp(-1*Eac/(Kb*Temp));
+
+
+//***IML region	
+		Ciml_o=Cv*Ls*pi*w0*w0/(Liml*Wiml*Wiml*pi);
+		factor1_up=2*(1-Ciml_o)*sigma_iml+(1+2*Ciml_o)*sigma_o;
+		factor1_down=(2+Ciml_o)*sigma_iml+(1-Ciml_o)*sigma_o;
+		if (factor1_down<1e-6)
+		begin 
+			sigma_iml=0;
+		end
+		else if (factor1_down>1e-6)
+		begin
+			sigma_iml=sigma0_iml*factor1_up/factor1_down;
+		end
+
+
+// ***resistance switching region 
+
+		E=(Vs/Ls);
+		A0=A/phi2;
+		B0=B*pow(phi2,3/2);
+		sigma_hfo2=(2*A0*(-1*E)+A0*B0)*exp(-1*B0/(-1*E));
+		factor2_up=2*(1-Cv)*sigma_hfo2+(1+2*Cv)*sigma_v;
+		factor2_down=(2+Cv)*sigma_hfo2+(1-Cv)*sigma_v;
+		if (factor2_down<1e-6)
+		begin 
+			sigma_rs=0;
+		end
+		else if (factor2_down>1e-6)
+		begin
+			sigma_rs=sigma_hfo2*factor2_up/factor2_down;
+		end
+
+
+
+
+//*** Vo and O2- proportion
+
+		Rv=Lv/(pi*w0*w0*sigma_v);
+		Riml=Liml/(pi*Wiml*Wiml*sigma_iml);
+		Rs=Ls/(pi*w0*w0*sigma_rs);
+		Itb=Vtb/(Riml+Rs+Rv);
+		Vs=Itb*Rs;
+		Temp = T0 + abs(Itb * Vs * Rth) ;
+		E=(Vs/Ls);
+
+		dCo=dt*f*exp(-(Eo-(-1*E)*alpha2*a*e*Z)/(Kb*Temp))*(1-Co)*a/Ls ;
+		dCv=Cv*(dCo+Co)*f*exp(-1*Er/(Kb*Temp));
+		
+		if (dCv>(dCo+Co))
+		begin 
+			dCv=dCo+Co;
+		end
+		Cv=Cv-dCv;
+		Co=Co+dCo-dCv;
+	end
+	
+
+	if (Co>1)
+	begin
+		Co=1;
+	end
+	if (Cv<0)
+	begin
+		Cv=0;
+	end
+	if (Cv>1)
+	begin
+		Cv=1;
+	end
+	
+
+end
+	I(t,b)<+Itb;
+
+end
+
+
+endmodule
+/*******************************************************************
+   END
+*******************************************************************/
