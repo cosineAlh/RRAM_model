@@ -39,7 +39,7 @@ for v in Vs:
   
 ############################################################
 results = {'V': Vs, 'I':Is, 'R':Rs, 't':Ts}
-np.save('RESET_'+str(int(T_ini-273))+'C', results)
+#np.save('RESET_'+str(int(T_ini-273))+'C', results)
 
 f, ax = plt.subplots(2, 1)
 #f.set_size_inches(3.5, 4.)
