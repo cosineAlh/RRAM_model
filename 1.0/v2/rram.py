@@ -135,5 +135,10 @@ class rram:
 
         return self.Itb, self.T_cur
     
-    def R(self):
-        return 1./(self.I0*np.exp(-self.gap/self.g0)+1e-12)
+    def R(self, Vread=None):
+        if Vread == None:
+            R_out = 1./(self.I0*np.exp(-self.gap/self.g0)+1e-12)
+        else:
+            R_out = Vread/(self.I0*np.exp(-self.gap/self.g0)+1e-12)
+            
+        return R_out
