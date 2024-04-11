@@ -30,6 +30,7 @@ Run `test.py` under folders.
     |-- /RRAM2_0_Beta      # Origin Hspice files
     |-- rram.py            # RRAM
     `-- test.py            # testbench
+|-- /my_VerilogA           # my verilogA model
 `-- /RRAM_analog           # Analog version (not tested)
 ```
 

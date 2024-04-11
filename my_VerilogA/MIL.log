@@ -1,0 +1,32 @@
+pnlAddPane();
+nil
+1
+designOpen("C:\\users\\anlh2022\\desktop\\rram-veriloga\\1T1R.sp");
+"D0"
+t
+pnlAddCurve(1, node(D0,"A0","v(bl)"), node(D0,"A0","TIME"));
+nil
+pnlAddPane();
+nil
+nil
+2
+pnlAddCurve(2, node(D0,"A0","i(v_bl_set)"), node(D0,"A0","TIME"));
+nil
+pnlAddPane();
+nil
+nil
+3
+pnlAddCurve(3, node(D0,"A0","par(abs(v(bl)/i(v_bl_set)))"), node(D0,"A0","TIME"));
+nil
+quit();
+exit
+pnlDeletePane(3, 1);
+nil
+nil
+nil
+pnlDeletePane(2, 1);
+nil
+nil
+pnlDeletePane(1, 1);
+nil
+nil

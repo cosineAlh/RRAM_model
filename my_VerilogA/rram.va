@@ -1,0 +1,113 @@
+`include "constants.vams"
+`include "disciplines.vams"
+
+// Electrical properties, top electrode, TE, bottom electrode BE
+module rram(TE, BE);
+	inout TE, BE;
+	electrical TE, BE, gap_out, R_out, temp_out;
+
+	// Switch to select Standard Model (0) or Dynamic Model (1)
+	parameter integer model_switch = 0 from[0:1];
+
+	parameter real kb = `P_K;   // Boltzmann's constant= 1.3806503e-23 (J/K)
+	parameter real q = `P_Q;    // Electron charge= 1.6e-19 (C)
+
+	// Device parameters
+    parameter real tox = 12e-9 from(0:100e-9);  // oxide thickness
+    parameter real gap_ini = 2e-10 from(0:100e-10); // Initial gap distance (m)
+	parameter real gap_min = 2e-10 from(0:100e-10); // Min. gap distance (m)
+	parameter real gap_max = 17e-10 from(0:100e-10);    // Max. gap distance (m)
+    parameter real F_min = 1.4e9 from(0:3e9);   // Minimum field requirement to enhance gap formation
+    parameter real Ea = 0.6 from(0:1);  // Activation energy for vacancy generation (eV)
+    parameter real a0 = 0.25e-9 from(0:inf);    // Atomic distance (m)
+    real a; // Atomic distance (m)
+
+    // I-V characteristics
+    parameter real I0 = 1e-6 from(0:1e-2);
+	parameter real g0 = 0.375e-9 from(0:2e-9);
+	parameter real V0 = 0.25 from(0:10);
+
+    // Gap dynamics
+	parameter real Vel0 = 10 from(0:20);
+    parameter real gamma0 = 16 from(0:inf); 
+    parameter real g1 = 1e-9 from(0:inf);
+	parameter real beta = 0.8 from(0:inf);
+    real gap;       // Current gap (m)
+	real gap_ddt, gap_random_ddt;   // Gap growth velocity (m/s)
+	real gamma;     // Local enhancement factor
+
+    // Temperature dynamics
+    parameter real T_ini = 273+25 from(0:inf);  // Ambient temperature (K)
+	parameter real T_crit = 450 from(390:460);  // threshold temperature for significant random variations
+    parameter real T_smth = 500 from(400:600);  // Activation energy for vacancy generation
+    parameter real Rth = 2.1e3 from(0:inf);     // Thermal resistance
+    //parameter real Cth = 3.1825e-16 from(0:inf);	// Effective thermal capacitance (J/K)
+	//parameter real Tau_th = 2.3e-10 from(0:inf);	// Effective thermal time constant (s)
+    real T_cur; // Current temperature (K)
+
+    // Variations fitting parameters
+	parameter real deltaGap0 = 0.1 from(0:0.5);
+    real deltaGap;
+	
+	// Initial random seed
+	parameter integer rand_seed_ini	= 0 from(-1.6e9:1.6e9);
+    integer rand_seed;
+
+	// Simulation time control
+	parameter real tstep = 1e-9 from(1e-15:1);  // Max. internal timestep (s)
+
+	// Voltage V(TE, BE), Vtb; Current I(TE, BE), Itb
+	real Vtb, Itb;  
+	
+	analog begin
+
+		$bound_step(tstep); // Bound the time step
+		
+		@(initial_step) begin
+            T_cur = T_ini;
+            gap = gap_ini;
+			rand_seed = rand_seed_ini;
+        end
+
+        Vtb = V(TE,BE);
+		Itb = I(TE,BE);
+		T_cur = T_ini + abs( Vtb * Itb * Rth);
+
+        // Calculate the local enhancement factor
+		gamma = gamma0 - beta * pow((gap/g1), 3);
+
+		if ((gamma*2*abs(Vtb)/tox) < F_min) begin
+			gamma = 0;
+		end
+		
+        // Gap dynamics
+		a = a0/pow((T_cur/298), 0.95);
+		gap_ddt = -Vel0*exp(-q*Ea/kb/T_cur)*sinh(gamma*a/tox*q*Vtb/kb/T_cur);
+		
+        // gap time derivative - variation part
+        deltaGap = deltaGap0 * model_switch;
+		gap_random_ddt = $rdist_normal(rand_seed, 0, 1) * deltaGap/(1+exp((T_crit-T_cur)/T_smth));
+		gap = idt(gap_ddt+gap_random_ddt, gap_ini);
+
+        // Limitation on the gap growth
+		if(gap < gap_min) begin
+			gap = gap_min;
+		end else if (gap > gap_max) begin
+			gap = gap_max;
+		end
+
+        // Calculate the current
+		Itb = I0 * exp(-gap/g0)*sinh(Vtb/V0);
+		I(TE,BE) <+ Itb;
+
+        // Calculate the local temperature (implicit form)
+		// T_cur = (T_cur + dt*(abs(Vtb*Itb)/Cth+T0/Tau_th))/(1+dt/Tau_th);
+		// explicit
+		// T_cur = T_cur + dt*(abs(Vtb*Itb)/Cth - (T_cur-T0)/Tau_th);
+
+		// Parameter extraction
+		V(gap_out) <+ gap;		// Gap distance
+		V(temp_out) <+ T_cur;	// Temperature
+		//V(R_out) <+ Vtb/Itb;
+	end
+endmodule
